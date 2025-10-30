@@ -1,35 +1,40 @@
-import { Message } from "discord.js";
+import { CommandInteraction, Message } from "discord.js";
 import { performance } from "perf_hooks";
+import { GenericCommandSource, getContextChannel, sendContextResponse } from "../../../pluginUtils.js";
 import { noop, trimLines } from "../../../utils.js";
-import { utilityCmd } from "../types.js";
+import { utilityCmd, utilitySlashCmd } from "../types.js";
 
-export const PingCmd = utilityCmd({
-  trigger: ["ping", "pong"],
-  description: "Test the bot's ping to the Discord API",
-  permission: "can_ping",
+async function runPingCommand(pluginData, context: GenericCommandSource) {
+  const channel = await getContextChannel(context);
+  if (!channel || !channel.isSendable()) {
+    await pluginData.state.common.sendErrorMessage(context, "Channel is not accessible");
+    return;
+  }
 
-  async run({ message: msg, pluginData }) {
-    const times: number[] = [];
-    const messages: Message[] = [];
-    let msgToMsgDelay: number | undefined;
+  const times: number[] = [];
+  const messages: Message[] = [];
+  let msgToMsgDelay: number | undefined;
 
-    for (let i = 0; i < 4; i++) {
-      const start = performance.now();
-      const message = await msg.channel.send(`Calculating ping... ${i + 1}`);
-      times.push(performance.now() - start);
-      messages.push(message);
+  const contextTimestamp = (context as Message | CommandInteraction).createdTimestamp;
 
-      if (msgToMsgDelay === undefined) {
-        msgToMsgDelay = message.createdTimestamp - msg.createdTimestamp;
-      }
+  for (let i = 0; i < 4; i++) {
+    const start = performance.now();
+    const sentMessage = await channel.send(`Calculating ping... ${i + 1}`);
+    times.push(performance.now() - start);
+    messages.push(sentMessage);
+
+    if (msgToMsgDelay === undefined) {
+      msgToMsgDelay = sentMessage.createdTimestamp - contextTimestamp;
     }
+  }
 
-    const highest = Math.round(Math.max(...times));
-    const lowest = Math.round(Math.min(...times));
-    const mean = Math.round(times.reduce((total, ms) => total + ms, 0) / times.length);
+  const highest = Math.round(Math.max(...times));
+  const lowest = Math.round(Math.min(...times));
+  const mean = Math.round(times.reduce((total, ms) => total + ms, 0) / times.length);
 
-    msg.channel.send(
-      trimLines(`
+  await sendContextResponse(
+    context,
+    trimLines(`
       **Ping:**
       Lowest: **${lowest}ms**
       Highest: **${highest}ms**
@@ -37,9 +42,32 @@ export const PingCmd = utilityCmd({
       Time between ping command and first reply: **${msgToMsgDelay!}ms**
       Shard latency: **${pluginData.client.ws.ping}ms**
     `),
-    );
+    false,
+  );
 
-    // Clean up test messages
-    msg.channel.bulkDelete(messages).catch(noop);
+  await Promise.all(messages.map((m) => m.delete().catch(noop)));
+}
+
+export const PingCmd = utilityCmd({
+  trigger: ["ping", "pong"],
+  description: "Test the bot's ping to the Discord API",
+  permission: "can_ping",
+
+  async run({ message: msg, pluginData }) {
+    await runPingCommand(pluginData, msg);
+  },
+});
+
+export const PingSlashCmd = utilitySlashCmd({
+  name: "ping",
+  description: "Test the bot's ping to the Discord API",
+  configPermission: "can_ping",
+  allowDms: false,
+
+  signature: [],
+
+  async run({ interaction, pluginData }) {
+    await interaction.deferReply({ ephemeral: false });
+    await runPingCommand(pluginData, interaction);
   },
 });

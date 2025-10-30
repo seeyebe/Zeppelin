@@ -1,10 +1,12 @@
 import photon from "@silvia-odwyer/photon-node";
 import { AttachmentBuilder } from "discord.js";
+import { slashOptions } from "knub";
+import { GenericCommandSource, sendContextResponse } from "../../../pluginUtils.js";
 import fs from "fs";
 import twemoji from "twemoji";
 import { commandTypeHelpers as ct } from "../../../commandTypes.js";
 import { downloadFile, isEmoji, SECONDS } from "../../../utils.js";
-import { utilityCmd } from "../types.js";
+import { utilityCmd, utilitySlashCmd } from "../types.js";
 
 const fsp = fs.promises;
 
@@ -30,6 +32,59 @@ function resizeBuffer(input: Buffer, width: number, height: number): Buffer {
   return photonImageToBuffer(photonImage);
 }
 
+async function runJumboCommand(pluginData, context: GenericCommandSource, emojiInput: string) {
+  const config = pluginData.config.get();
+  const size = config.jumbo_size > 2048 ? 2048 : config.jumbo_size;
+  const emojiRegex = new RegExp(`(<.*:).*:(\\d+)`);
+  const results = emojiRegex.exec(emojiInput);
+  let extension = ".png";
+  let file: AttachmentBuilder | undefined;
+
+  if (!isEmoji(emojiInput)) {
+    await pluginData.state.common.sendErrorMessage(context, "Invalid emoji");
+    return;
+  }
+
+  if (results) {
+    let url = "https://cdn.discordapp.com/emojis/";
+    if (results[1] === "<a:") {
+      extension = ".gif";
+    }
+    url += `${results[2]}${extension}`;
+    if (extension === ".png") {
+      const image = resizeBuffer(await getBufferFromUrl(url), size, size);
+      file = new AttachmentBuilder(image, { name: `emoji${extension}` });
+    } else {
+      const image = await getBufferFromUrl(url);
+      file = new AttachmentBuilder(image, { name: `emoji${extension}` });
+    }
+  } else {
+    let url = `${twemoji.base}${twemoji.size}/${twemoji.convert.toCodePoint(emojiInput)}${twemoji.ext}`;
+    let image: Buffer | undefined;
+    try {
+      const downloadedBuffer = await getBufferFromUrl(url);
+      image = resizeBuffer(downloadedBuffer, size, size);
+    } catch (err) {
+      if (url.toLocaleLowerCase().endsWith("fe0f.png")) {
+        url = url.slice(0, url.lastIndexOf("-fe0f")) + ".png";
+        try {
+          image = resizeBuffer(await getBufferFromUrl(url), size, size);
+        } catch {
+          // It's fine if this fails, we just don't jumbo then.
+        }
+      }
+    }
+    if (!image) {
+      await pluginData.state.common.sendErrorMessage(context, "Error occurred while jumboing default emoji");
+      return;
+    }
+
+    file = new AttachmentBuilder(image, { name: "emoji.png" });
+  }
+
+  await sendContextResponse(context, { files: [file!] }, false);
+}
+
 export const JumboCmd = utilityCmd({
   trigger: "jumbo",
   description: "Makes an emoji jumbo",
@@ -41,58 +96,20 @@ export const JumboCmd = utilityCmd({
   },
 
   async run({ message: msg, args, pluginData }) {
-    // Get emoji url
-    const config = pluginData.config.get();
-    const size = config.jumbo_size > 2048 ? 2048 : config.jumbo_size;
-    const emojiRegex = new RegExp(`(<.*:).*:(\\d+)`);
-    const results = emojiRegex.exec(args.emoji);
-    let extension = ".png";
-    let file: AttachmentBuilder | undefined;
+    await runJumboCommand(pluginData, msg, args.emoji);
+  },
+});
 
-    if (!isEmoji(args.emoji)) {
-      void pluginData.state.common.sendErrorMessage(msg, "Invalid emoji");
-      return;
-    }
+export const JumboSlashCmd = utilitySlashCmd({
+  name: "jumbo",
+  description: "Makes an emoji jumbo",
+  configPermission: "can_jumbo",
+  allowDms: false,
 
-    if (results) {
-      let url = "https://cdn.discordapp.com/emojis/";
-      if (results[1] === "<a:") {
-        extension = ".gif";
-      }
-      url += `${results[2]}${extension}`;
-      if (extension === ".png") {
-        const image = resizeBuffer(await getBufferFromUrl(url), size, size);
-        file = new AttachmentBuilder(image, { name: `emoji${extension}` });
-      } else {
-        const image = await getBufferFromUrl(url);
-        file = new AttachmentBuilder(image, { name: `emoji${extension}` });
-      }
-    } else {
-      let url = `${twemoji.base}${twemoji.size}/${twemoji.convert.toCodePoint(args.emoji)}${twemoji.ext}`;
-      let image: Buffer | undefined;
-      try {
-        const downloadedBuffer = await getBufferFromUrl(url);
-        image = resizeBuffer(downloadedBuffer, size, size);
-      } catch (err) {
-        if (url.toLocaleLowerCase().endsWith("fe0f.png")) {
-          url = url.slice(0, url.lastIndexOf("-fe0f")) + ".png";
-          try {
-            image = resizeBuffer(await getBufferFromUrl(url), size, size);
-          } catch {
-            // It's fine if this fails, we just don't jumbo then.
-            // The errors here are usually some internal errors in the photon WASM code anyway,
-            // so we can't do anything about it.
-          }
-        }
-      }
-      if (!image) {
-        void pluginData.state.common.sendErrorMessage(msg, "Error occurred while jumboing default emoji");
-        return;
-      }
+  signature: [slashOptions.string({ name: "emoji", description: "Emoji to enlarge", required: true })],
 
-      file = new AttachmentBuilder(image, { name: "emoji.png" });
-    }
-
-    msg.channel.send({ files: [file] });
+  async run({ interaction, options, pluginData }) {
+    await interaction.deferReply({ ephemeral: false });
+    await runJumboCommand(pluginData, interaction, options.emoji);
   },
 });

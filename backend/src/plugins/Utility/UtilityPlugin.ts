@@ -11,32 +11,32 @@ import { CommonPlugin } from "../Common/CommonPlugin.js";
 import { LogsPlugin } from "../Logs/LogsPlugin.js";
 import { ModActionsPlugin } from "../ModActions/ModActionsPlugin.js";
 import { TimeAndDatePlugin } from "../TimeAndDate/TimeAndDatePlugin.js";
-import { AboutCmd } from "./commands/AboutCmd.js";
-import { AvatarCmd } from "./commands/AvatarCmd.js";
-import { BanSearchCmd } from "./commands/BanSearchCmd.js";
-import { ChannelInfoCmd } from "./commands/ChannelInfoCmd.js";
-import { CleanCmd } from "./commands/CleanCmd.js";
-import { ContextCmd } from "./commands/ContextCmd.js";
-import { EmojiInfoCmd } from "./commands/EmojiInfoCmd.js";
-import { HelpCmd } from "./commands/HelpCmd.js";
-import { InfoCmd } from "./commands/InfoCmd.js";
-import { InviteInfoCmd } from "./commands/InviteInfoCmd.js";
-import { JumboCmd } from "./commands/JumboCmd.js";
-import { LevelCmd } from "./commands/LevelCmd.js";
-import { MessageInfoCmd } from "./commands/MessageInfoCmd.js";
-import { NicknameCmd } from "./commands/NicknameCmd.js";
-import { NicknameResetCmd } from "./commands/NicknameResetCmd.js";
-import { PingCmd } from "./commands/PingCmd.js";
-import { ReloadGuildCmd } from "./commands/ReloadGuildCmd.js";
-import { RoleInfoCmd } from "./commands/RoleInfoCmd.js";
-import { RolesCmd } from "./commands/RolesCmd.js";
-import { SearchCmd } from "./commands/SearchCmd.js";
-import { ServerInfoCmd } from "./commands/ServerInfoCmd.js";
-import { SnowflakeInfoCmd } from "./commands/SnowflakeInfoCmd.js";
-import { SourceCmd } from "./commands/SourceCmd.js";
-import { UserInfoCmd } from "./commands/UserInfoCmd.js";
-import { VcdisconnectCmd } from "./commands/VcdisconnectCmd.js";
-import { VcmoveAllCmd, VcmoveCmd } from "./commands/VcmoveCmd.js";
+import { AboutCmd, AboutSlashCmd } from "./commands/AboutCmd.js";
+import { AvatarCmd, AvatarSlashCmd } from "./commands/AvatarCmd.js";
+import { BanSearchCmd, BanSearchSlashCmd } from "./commands/BanSearchCmd.js";
+import { ChannelInfoCmd, ChannelInfoSlashCmd } from "./commands/ChannelInfoCmd.js";
+import { CleanCmd, CleanSlashCmd } from "./commands/CleanCmd.js";
+import { ContextCmd, ContextSlashCmd } from "./commands/ContextCmd.js";
+import { EmojiInfoCmd, EmojiInfoSlashCmd } from "./commands/EmojiInfoCmd.js";
+import { HelpCmd, HelpSlashCmd } from "./commands/HelpCmd.js";
+import { InfoCmd, InfoSlashCmd } from "./commands/InfoCmd.js";
+import { InviteInfoCmd, InviteInfoSlashCmd } from "./commands/InviteInfoCmd.js";
+import { JumboCmd, JumboSlashCmd } from "./commands/JumboCmd.js";
+import { LevelCmd, LevelSlashCmd } from "./commands/LevelCmd.js";
+import { MessageInfoCmd, MessageInfoSlashCmd } from "./commands/MessageInfoCmd.js";
+import { NicknameCmd, NicknameSlashCmd } from "./commands/NicknameCmd.js";
+import { NicknameResetCmd, NicknameResetSlashCmd } from "./commands/NicknameResetCmd.js";
+import { PingCmd, PingSlashCmd } from "./commands/PingCmd.js";
+import { ReloadGuildCmd, ReloadGuildSlashCmd } from "./commands/ReloadGuildCmd.js";
+import { RoleInfoCmd, RoleInfoSlashCmd } from "./commands/RoleInfoCmd.js";
+import { RolesCmd, RolesSlashCmd } from "./commands/RolesCmd.js";
+import { SearchCmd, SearchSlashCmd } from "./commands/SearchCmd.js";
+import { ServerInfoCmd, ServerInfoSlashCmd } from "./commands/ServerInfoCmd.js";
+import { SnowflakeInfoCmd, SnowflakeInfoSlashCmd } from "./commands/SnowflakeInfoCmd.js";
+import { SourceCmd, SourceSlashCmd } from "./commands/SourceCmd.js";
+import { UserInfoCmd, UserInfoSlashCmd } from "./commands/UserInfoCmd.js";
+import { VcdisconnectCmd, VcdisconnectSlashCmd } from "./commands/VcdisconnectCmd.js";
+import { VcmoveAllCmd, VcmoveAllSlashCmd, VcmoveCmd, VcmoveSlashCmd } from "./commands/VcmoveCmd.js";
 import { AutoJoinThreadEvt, AutoJoinThreadSyncEvt } from "./events/AutoJoinThreadEvt.js";
 import { cleanMessages } from "./functions/cleanMessages.js";
 import { fetchChannelMessagesToClean } from "./functions/fetchChannelMessagesToClean.js";
@@ -87,6 +87,37 @@ export const UtilityPlugin = guildPlugin<UtilityPluginType>()({
         can_about: true,
       },
     },
+  ],
+
+  // prettier-ignore
+  slashCommands: [
+    AboutSlashCmd,
+    AvatarSlashCmd,
+    JumboSlashCmd,
+    InviteInfoSlashCmd,
+    ChannelInfoSlashCmd,
+    MessageInfoSlashCmd,
+    ServerInfoSlashCmd,
+    RoleInfoSlashCmd,
+    SnowflakeInfoSlashCmd,
+    EmojiInfoSlashCmd,
+    LevelSlashCmd,
+    InfoSlashCmd,
+    HelpSlashCmd,
+    SourceSlashCmd,
+    ContextSlashCmd,
+    SearchSlashCmd,
+    BanSearchSlashCmd,
+    NicknameSlashCmd,
+    NicknameResetSlashCmd,
+    ReloadGuildSlashCmd,
+    CleanSlashCmd,
+    VcdisconnectSlashCmd,
+    VcmoveSlashCmd,
+    VcmoveAllSlashCmd,
+    RolesSlashCmd,
+    UserInfoSlashCmd,
+    PingSlashCmd,
   ],
 
   // prettier-ignore

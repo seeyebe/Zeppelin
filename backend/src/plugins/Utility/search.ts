@@ -5,7 +5,6 @@ import {
   GuildMember,
   Message,
   MessageComponentInteraction,
-  OmitPartialGroupDMChannel,
   PermissionsBitField,
   Snowflake,
   User,
@@ -14,7 +13,13 @@ import escapeStringRegexp from "escape-string-regexp";
 import { ArgsFromSignatureOrArray, GuildPluginData } from "knub";
 import moment from "moment-timezone";
 import { RegExpRunner, allowTimeout } from "../../RegExpRunner.js";
-import { getBaseUrl } from "../../pluginUtils.js";
+import {
+  GenericCommandSource,
+  getBaseUrl,
+  getContextChannel,
+  isContextInteraction,
+  sendContextResponse,
+} from "../../pluginUtils.js";
 import {
   InvalidRegexError,
   MINUTES,
@@ -74,45 +79,48 @@ export async function displaySearch(
   pluginData: GuildPluginData<UtilityPluginType>,
   args: MemberSearchParams,
   searchType: SearchType.MemberSearch,
-  msg: OmitPartialGroupDMChannel<Message>,
+  context: GenericCommandSource,
 );
 export async function displaySearch(
   pluginData: GuildPluginData<UtilityPluginType>,
   args: BanSearchParams,
   searchType: SearchType.BanSearch,
-  msg: OmitPartialGroupDMChannel<Message>,
+  context: GenericCommandSource,
 );
 export async function displaySearch(
   pluginData: GuildPluginData<UtilityPluginType>,
   args: MemberSearchParams | BanSearchParams,
   searchType: SearchType,
-  msg: OmitPartialGroupDMChannel<Message>,
+  context: GenericCommandSource,
 ) {
-  // If we're not exporting, load 1 page of search results at a time and allow the user to switch pages with reactions
-  let originalSearchMsg: OmitPartialGroupDMChannel<Message>;
+  // If we're not exporting, load 1 page of search results at a time and allow the user to switch pages with buttons
+  let originalSearchMsg: Message | undefined;
   let searching = false;
   let currentPage = args.page || 1;
-  let stopCollectionFn: () => void;
-  let stopCollectionTimeout: Timeout;
+  let stopCollectionFn: (() => void) | undefined;
+  let stopCollectionTimeout: Timeout | undefined;
 
   const perPage = args.ids ? SEARCH_ID_RESULTS_PER_PAGE : SEARCH_RESULTS_PER_PAGE;
+  const authorUser = isContextInteraction(context) ? context.user : context.author;
+  const authorId = authorUser.id;
 
-  const loadSearchPage = async (page) => {
+  const loadSearchPage = async (page: number) => {
     if (searching) return;
     searching = true;
 
-    // The initial message is created here, as well as edited to say "Searching..." on subsequent requests
-    // We don't "await" this so we can start loading the search results immediately instead of after the message has been created/edited
     let searchMsgPromise: Promise<Message>;
     if (originalSearchMsg) {
       searchMsgPromise = originalSearchMsg.edit("Searching...");
     } else {
-      searchMsgPromise = msg.channel.send("Searching...");
-      searchMsgPromise.then((m) => (originalSearchMsg = m as OmitPartialGroupDMChannel<Message>));
+      searchMsgPromise = sendContextResponse(context, { content: "Searching..." }, false);
+      searchMsgPromise = searchMsgPromise.then((m) => {
+        originalSearchMsg = m;
+        return m;
+      });
     }
 
-    let searchResult;
     try {
+      let searchResult;
       switch (searchType) {
         case SearchType.MemberSearch:
           searchResult = await performMemberSearch(pluginData, args as MemberSearchParams, page, perPage);
@@ -120,88 +128,89 @@ export async function displaySearch(
         case SearchType.BanSearch:
           searchResult = await performBanSearch(pluginData, args as BanSearchParams, page, perPage);
           break;
+        default:
+          throw new Error("Unknown search type");
       }
-    } catch (e) {
-      if (e instanceof SearchError) {
-        void pluginData.state.common.sendErrorMessage(msg, e.message);
+
+      if (searchResult.totalResults === 0) {
+        await pluginData.state.common.sendErrorMessage(context, "No results found");
         return;
       }
 
-      if (e instanceof InvalidRegexError) {
-        void pluginData.state.common.sendErrorMessage(msg, e.message);
-        return;
+      const resultWord = searchResult.totalResults === 1 ? "matching member" : "matching members";
+      const headerText =
+        searchResult.totalResults > perPage
+          ? trimLines(`
+              **Page ${searchResult.page}** (${searchResult.from}-${searchResult.to}) (total ${searchResult.totalResults})
+            `)
+          : `Found ${searchResult.totalResults} ${resultWord}`;
+
+      const resultList = args.ids
+        ? formatSearchResultIdList(searchResult.results)
+        : formatSearchResultList(searchResult.results);
+
+      const result = trimLines(`
+          ${headerText}
+          \`\`\`js
+          ${resultList}
+          \`\`\`
+        `);
+
+      const searchMsg = await searchMsgPromise;
+
+      if (stopCollectionFn) {
+        stopCollectionFn();
+        stopCollectionFn = undefined;
+      }
+      if (stopCollectionTimeout) {
+        clearTimeout(stopCollectionTimeout);
+        stopCollectionTimeout = undefined;
       }
 
-      throw e;
-    }
-
-    if (searchResult.totalResults === 0) {
-      void pluginData.state.common.sendErrorMessage(msg, "No results found");
-      return;
-    }
-
-    const resultWord = searchResult.totalResults === 1 ? "matching member" : "matching members";
-    const headerText =
-      searchResult.totalResults > perPage
-        ? trimLines(`
-            **Page ${searchResult.page}** (${searchResult.from}-${searchResult.to}) (total ${searchResult.totalResults})
-          `)
-        : `Found ${searchResult.totalResults} ${resultWord}`;
-
-    const resultList = args.ids
-      ? formatSearchResultIdList(searchResult.results)
-      : formatSearchResultList(searchResult.results);
-
-    const result = trimLines(`
-        ${headerText}
-        \`\`\`js
-        ${resultList}
-        \`\`\`
-      `);
-
-    const searchMsg = await searchMsgPromise;
-
-    const cfg = await pluginData.config.getForUser(msg.author);
-    if (cfg.info_on_single_result && searchResult.totalResults === 1) {
-      const embed = await getUserInfoEmbed(pluginData, searchResult.results[0].id, false);
-      if (embed) {
-        searchMsg.edit("Only one result:");
-        msg.channel.send({ embeds: [embed] });
-        return;
+      const cfg = await pluginData.config.getForUser(authorUser);
+      if (cfg.info_on_single_result && searchResult.totalResults === 1) {
+        const embed = await getUserInfoEmbed(pluginData, searchResult.results[0].id, false);
+        if (embed) {
+          await searchMsg.edit("Only one result:");
+          const channel = await getContextChannel(context);
+          if (channel?.isSendable()) {
+            await channel.send({ embeds: [embed] });
+          }
+          return;
+        }
       }
-    }
 
-    currentPage = searchResult.page;
+      currentPage = searchResult.page;
 
-    // Set up pagination reactions if needed. The reactions are cleared after a timeout.
-    if (searchResult.totalResults > perPage) {
-      const idMod = `${searchMsg.id}:${moment.utc().valueOf()}`;
-      const buttons: ButtonBuilder[] = [
-        new ButtonBuilder()
-          .setStyle(ButtonStyle.Secondary)
-          .setEmoji("⬅")
-          .setCustomId(`previousButton:${idMod}`)
-          .setDisabled(currentPage === 1),
-        new ButtonBuilder()
-          .setStyle(ButtonStyle.Secondary)
-          .setEmoji("➡")
-          .setCustomId(`nextButton:${idMod}`)
-          .setDisabled(currentPage === searchResult.lastPage),
-        new ButtonBuilder().setStyle(ButtonStyle.Secondary).setEmoji("🔄").setCustomId(`reloadButton:${idMod}`),
-      ];
+      if (searchResult.totalResults > perPage) {
+        const idMod = `${searchMsg.id}:${moment.utc().valueOf()}`;
+        const buttons: ButtonBuilder[] = [
+          new ButtonBuilder()
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji("⬅")
+            .setCustomId(`previousButton:${idMod}`)
+            .setDisabled(currentPage === 1),
+          new ButtonBuilder()
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji("➡")
+            .setCustomId(`nextButton:${idMod}`)
+            .setDisabled(currentPage === searchResult.lastPage),
+          new ButtonBuilder().setStyle(ButtonStyle.Secondary).setEmoji("🔄").setCustomId(`reloadButton:${idMod}`),
+        ];
 
-      const row = new ActionRowBuilder<ButtonBuilder>().addComponents(buttons);
-      await searchMsg.edit({ content: result, components: [row] });
+        const row = new ActionRowBuilder<ButtonBuilder>().addComponents(buttons);
+        await searchMsg.edit({ content: result, components: [row] });
 
-      const collector = searchMsg.createMessageComponentCollector({ time: 2 * MINUTES });
+        const collector = searchMsg.createMessageComponentCollector({ time: 2 * MINUTES });
 
-      collector.on("collect", async (interaction: MessageComponentInteraction) => {
-        if (msg.author.id !== interaction.user.id) {
-          interaction
-            .reply({ content: `You are not permitted to use these buttons.`, ephemeral: true })
-            // tslint:disable-next-line no-console
-            .catch((err) => console.trace(err.message));
-        } else {
+        collector.on("collect", async (interaction: MessageComponentInteraction) => {
+          if (interaction.user.id !== authorId) {
+            interaction
+              .reply({ content: `You are not permitted to use these buttons.`, ephemeral: true })
+              .catch((err) => console.trace(err.message));
+            return;
+          }
+
           if (interaction.customId === `previousButton:${idMod}` && currentPage > 1) {
             collector.stop();
             await interaction.deferUpdate();
@@ -217,43 +226,51 @@ export async function displaySearch(
           } else {
             await interaction.deferUpdate();
           }
-        }
-      });
+        });
 
-      stopCollectionFn = async () => {
-        collector.stop();
-        await searchMsg.edit({ content: searchMsg.content, components: [] });
-      };
+        stopCollectionFn = () => {
+          collector.stop();
+          void searchMsg.edit({ content: searchMsg.content, components: [] }).catch(() => undefined);
+        };
 
-      clearTimeout(stopCollectionTimeout);
-      stopCollectionTimeout = setTimeout(stopCollectionFn, 2 * MINUTES);
-    } else {
-      searchMsg.edit(result);
+        stopCollectionTimeout = setTimeout(() => {
+          stopCollectionFn?.();
+        }, 2 * MINUTES);
+      } else {
+        await searchMsg.edit(result);
+      }
+    } catch (e) {
+      if (e instanceof SearchError || e instanceof InvalidRegexError) {
+        await pluginData.state.common.sendErrorMessage(context, e.message);
+        return;
+      }
+
+      throw e;
+    } finally {
+      searching = false;
     }
-
-    searching = false;
   };
 
-  loadSearchPage(currentPage);
+  await loadSearchPage(currentPage);
 }
 
 export async function archiveSearch(
   pluginData: GuildPluginData<UtilityPluginType>,
   args: MemberSearchParams,
   searchType: SearchType.MemberSearch,
-  msg: OmitPartialGroupDMChannel<Message>,
+  context: GenericCommandSource,
 );
 export async function archiveSearch(
   pluginData: GuildPluginData<UtilityPluginType>,
   args: BanSearchParams,
   searchType: SearchType.BanSearch,
-  msg: OmitPartialGroupDMChannel<Message>,
+  context: GenericCommandSource,
 );
 export async function archiveSearch(
   pluginData: GuildPluginData<UtilityPluginType>,
   args: MemberSearchParams | BanSearchParams,
   searchType: SearchType,
-  msg: OmitPartialGroupDMChannel<Message>,
+  context: GenericCommandSource,
 ) {
   let results;
   try {
@@ -267,12 +284,12 @@ export async function archiveSearch(
     }
   } catch (e) {
     if (e instanceof SearchError) {
-      void pluginData.state.common.sendErrorMessage(msg, e.message);
+      await pluginData.state.common.sendErrorMessage(context, e.message);
       return;
     }
 
     if (e instanceof InvalidRegexError) {
-      void pluginData.state.common.sendErrorMessage(msg, e.message);
+      await pluginData.state.common.sendErrorMessage(context, e.message);
       return;
     }
 
@@ -280,7 +297,7 @@ export async function archiveSearch(
   }
 
   if (results.totalResults === 0) {
-    void pluginData.state.common.sendErrorMessage(msg, "No results found");
+    await pluginData.state.common.sendErrorMessage(context, "No results found");
     return;
   }
 
@@ -298,7 +315,7 @@ export async function archiveSearch(
   const baseUrl = getBaseUrl(pluginData);
   const url = await pluginData.state.archives.getUrl(baseUrl, archiveId);
 
-  await msg.channel.send(`Exported search results: ${url}`);
+  await sendContextResponse(context, { content: `Exported search results: ${url}` }, false);
 }
 
 async function performMemberSearch(

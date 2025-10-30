@@ -1,7 +1,25 @@
+import { slashOptions } from "knub";
+import { GenericCommandSource, sendContextResponse } from "../../../pluginUtils.js";
 import { commandTypeHelpers as ct } from "../../../commandTypes.js";
 import { getCustomEmojiId } from "../functions/getCustomEmojiId.js";
 import { getEmojiInfoEmbed } from "../functions/getEmojiInfoEmbed.js";
-import { utilityCmd } from "../types.js";
+import { utilityCmd, utilitySlashCmd } from "../types.js";
+
+async function runEmojiInfoCommand(pluginData, context: GenericCommandSource, emojiInput: string) {
+  const emojiId = getCustomEmojiId(emojiInput);
+  if (!emojiId) {
+    await pluginData.state.common.sendErrorMessage(context, "Emoji not found");
+    return;
+  }
+
+  const embed = await getEmojiInfoEmbed(pluginData, emojiId);
+  if (!embed) {
+    await pluginData.state.common.sendErrorMessage(context, "Emoji not found");
+    return;
+  }
+
+  await sendContextResponse(context, { embeds: [embed] }, false);
+}
 
 export const EmojiInfoCmd = utilityCmd({
   trigger: ["emoji", "emojiinfo"],
@@ -14,18 +32,20 @@ export const EmojiInfoCmd = utilityCmd({
   },
 
   async run({ message, args, pluginData }) {
-    const emojiId = getCustomEmojiId(args.emoji);
-    if (!emojiId) {
-      void pluginData.state.common.sendErrorMessage(message, "Emoji not found");
-      return;
-    }
+    await runEmojiInfoCommand(pluginData, message, args.emoji);
+  },
+});
 
-    const embed = await getEmojiInfoEmbed(pluginData, emojiId);
-    if (!embed) {
-      void pluginData.state.common.sendErrorMessage(message, "Emoji not found");
-      return;
-    }
+export const EmojiInfoSlashCmd = utilitySlashCmd({
+  name: "emojiinfo",
+  description: "Show information about an emoji",
+  configPermission: "can_emojiinfo",
+  allowDms: false,
 
-    message.channel.send({ embeds: [embed] });
+  signature: [slashOptions.string({ name: "emoji", description: "Emoji to inspect", required: true })],
+
+  async run({ interaction, options, pluginData }) {
+    await interaction.deferReply({ ephemeral: false });
+    await runEmojiInfoCommand(pluginData, interaction, options.emoji);
   },
 });

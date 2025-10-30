@@ -1,8 +1,69 @@
-import { escapeBold } from "discord.js";
+import { GuildMember, escapeBold } from "discord.js";
+import { slashOptions } from "knub";
+import { GenericCommandSource, canActOn, sendContextResponse } from "../../../pluginUtils.js";
 import { commandTypeHelpers as ct } from "../../../commandTypes.js";
-import { canActOn, resolveMessageMember } from "../../../pluginUtils.js";
 import { errorMessage } from "../../../utils.js";
-import { utilityCmd } from "../types.js";
+import { getCommandMember } from "../utils/contextHelpers.js";
+import { utilityCmd, utilitySlashCmd } from "../types.js";
+
+async function runNicknameCommand(
+  pluginData,
+  context: GenericCommandSource,
+  member: GuildMember | null,
+  nickname: string | null,
+) {
+  if (!member) {
+    await pluginData.state.common.sendErrorMessage(context, "Unknown member");
+    return;
+  }
+
+  if (!nickname) {
+    if (!member.nickname) {
+      await sendContextResponse(context, `<@!${member.id}> does not have a nickname`, false);
+    } else {
+      await sendContextResponse(
+        context,
+        `The nickname of <@!${member.id}> is **${escapeBold(member.nickname)}**`,
+        false,
+      );
+    }
+    return;
+  }
+
+  const authorMember = await getCommandMember(pluginData, context);
+  if (!authorMember) {
+    await pluginData.state.common.sendErrorMessage(context, "Cannot change nickname: missing permissions");
+    return;
+  }
+
+  if (authorMember.id !== member.id && !canActOn(pluginData, authorMember, member)) {
+    await pluginData.state.common.sendErrorMessage(context, "Cannot change nickname: insufficient permissions");
+    return;
+  }
+
+  const nicknameLength = [...nickname].length;
+  if (nicknameLength < 2 || nicknameLength > 32) {
+    await pluginData.state.common.sendErrorMessage(context, "Nickname must be between 2 and 32 characters long");
+    return;
+  }
+
+  const oldNickname = member.nickname || "<none>";
+
+  try {
+    await member.setNickname(nickname);
+  } catch {
+    await pluginData.state.common.sendErrorMessage(context, "Failed to change nickname");
+    return;
+  }
+
+  await pluginData.state.common.sendSuccessMessage(
+    context,
+    `Changed nickname of <@!${member.id}> from **${oldNickname}** to **${nickname}**`,
+    undefined,
+    undefined,
+    false,
+  );
+}
 
 export const NicknameCmd = utilityCmd({
   trigger: ["nickname", "nick"],
@@ -25,30 +86,30 @@ export const NicknameCmd = utilityCmd({
       return;
     }
 
-    const authorMember = await resolveMessageMember(msg);
-    if (msg.author.id !== args.member.id && !canActOn(pluginData, authorMember, args.member)) {
-      msg.channel.send(errorMessage("Cannot change nickname: insufficient permissions"));
-      return;
-    }
+    await runNicknameCommand(pluginData, msg, args.member, args.nickname ?? null);
+  },
+});
 
-    const nicknameLength = [...args.nickname].length;
-    if (nicknameLength < 2 || nicknameLength > 32) {
-      msg.channel.send(errorMessage("Nickname must be between 2 and 32 characters long"));
-      return;
-    }
+export const NicknameSlashCmd = utilitySlashCmd({
+  name: "nickname",
+  description: "Set a member's nickname",
+  configPermission: "can_nickname",
+  allowDms: false,
 
-    const oldNickname = args.member.nickname || "<none>";
+  signature: [
+    slashOptions.user({ name: "member", description: "Member to modify", required: true }),
+    slashOptions.string({ name: "nickname", description: "New nickname", required: false }),
+  ],
 
+  async run({ interaction, options, pluginData }) {
+    await interaction.deferReply({ ephemeral: false });
+    let member: GuildMember | null = null;
     try {
-      await args.member.setNickname(args.nickname ?? null);
+      member = await pluginData.guild.members.fetch(options.member.id);
     } catch {
-      msg.channel.send(errorMessage("Failed to change nickname"));
-      return;
+      member = null;
     }
 
-    void pluginData.state.common.sendSuccessMessage(
-      msg,
-      `Changed nickname of <@!${args.member.id}> from **${oldNickname}** to **${args.nickname}**`,
-    );
+    await runNicknameCommand(pluginData, interaction, member, options.nickname ?? null);
   },
 });

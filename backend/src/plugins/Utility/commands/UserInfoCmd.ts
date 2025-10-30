@@ -1,6 +1,20 @@
+import { slashOptions } from "knub";
+import { GenericCommandSource, sendContextResponse } from "../../../pluginUtils.js";
 import { commandTypeHelpers as ct } from "../../../commandTypes.js";
+import { getCommandUser } from "../utils/contextHelpers.js";
 import { getUserInfoEmbed } from "../functions/getUserInfoEmbed.js";
-import { utilityCmd } from "../types.js";
+import { utilityCmd, utilitySlashCmd } from "../types.js";
+
+async function runUserInfoCommand(pluginData, context: GenericCommandSource, userId: string | null, compact: boolean) {
+  const targetUserId = userId ?? getCommandUser(context).id;
+  const embed = await getUserInfoEmbed(pluginData, targetUserId, compact);
+  if (!embed) {
+    await pluginData.state.common.sendErrorMessage(context, "User not found");
+    return;
+  }
+
+  await sendContextResponse(context, { embeds: [embed] }, false);
+}
 
 export const UserInfoCmd = utilityCmd({
   trigger: ["user", "userinfo", "whois"],
@@ -15,13 +29,23 @@ export const UserInfoCmd = utilityCmd({
   },
 
   async run({ message, args, pluginData }) {
-    const userId = args.user?.id || message.author.id;
-    const embed = await getUserInfoEmbed(pluginData, userId, args.compact);
-    if (!embed) {
-      void pluginData.state.common.sendErrorMessage(message, "User not found");
-      return;
-    }
+    await runUserInfoCommand(pluginData, message, args.user?.id ?? null, args.compact);
+  },
+});
 
-    message.channel.send({ embeds: [embed] });
+export const UserInfoSlashCmd = utilitySlashCmd({
+  name: "userinfo",
+  description: "Show information about a user",
+  configPermission: "can_userinfo",
+  allowDms: false,
+
+  signature: [
+    slashOptions.user({ name: "user", description: "User to show", required: false }),
+    slashOptions.boolean({ name: "compact", description: "Use compact view", required: false }),
+  ],
+
+  async run({ interaction, options, pluginData }) {
+    await interaction.deferReply({ ephemeral: false });
+    await runUserInfoCommand(pluginData, interaction, options.user?.id ?? null, options.compact ?? false);
   },
 });

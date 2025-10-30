@@ -1,4 +1,11 @@
-import { BasePluginType, guildPluginEventListener, guildPluginMessageCommand, pluginUtils } from "knub";
+import {
+  BasePluginType,
+  guildPluginEventListener,
+  guildPluginMessageCommand,
+  guildPluginSlashCommand,
+  guildPluginSlashGroup,
+  pluginUtils,
+} from "knub";
 import z from "zod/v4";
 import { RegExpRunner } from "../../RegExpRunner.js";
 import { GuildArchives } from "../../data/GuildArchives.js";
@@ -56,3 +63,5 @@ export interface UtilityPluginType extends BasePluginType {
 
 export const utilityCmd = guildPluginMessageCommand<UtilityPluginType>();
 export const utilityEvt = guildPluginEventListener<UtilityPluginType>();
+export const utilitySlashCmd = guildPluginSlashCommand<UtilityPluginType>();
+export const utilitySlashGroup = guildPluginSlashGroup<UtilityPluginType>();
