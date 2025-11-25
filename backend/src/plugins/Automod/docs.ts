@@ -101,6 +101,7 @@ export const automodPluginDocs: ZeppelinPluginDocs = {
                   text: |-
                     Bad custom status on user <@!{user.id}>:
                     {matchSummary}
+      ~~~
 
       ### Combining multiple triggers
       The \`and\` trigger lets you require several triggers to match before the rule fires.
@@ -121,26 +122,51 @@ export const automodPluginDocs: ZeppelinPluginDocs = {
                 clean: true
                 warn:
                   reason: 'Potential scam link'
+      ~~~
 
       ### Negating a trigger
-      Use \`not\` to require a trigger *not* to match.
+      Use \`not\` to require a trigger *not* to match. This is useful for deny-by-default rules or allowlists.
 
       ~~~yml
       automod:
         config:
           rules:
-            links_except_invites:
+            only_invite_links:
               triggers:
-              - not:
-                  trigger:
-                    match_invites:
-                      include_domains: ['discord.gg', 'discord.com']
-              - match_links:
-                  include_domains: ['example.com']
+                - and:
+                    triggers:
+                      - match_links: {}
+                      - not:
+                          trigger:
+                            match_invites:
+                              allow_group_dm_invites: false
               actions:
                 clean: true
                 warn:
-                  reason: 'Non-invite links are not allowed'
+                  reason: 'Only Discord invite links are allowed'
+      ~~~
+
+      ### Combining \`and\` + \`not\`
+      This pattern is useful for "allowlists with exceptions" or more fine-grained filtering.
+
+      ~~~yml
+      automod:
+        config:
+          rules:
+            allow_trusted_links_only:
+              triggers:
+              - and:
+                  triggers:
+                  - match_links:
+                      include_domains: ['example.com']
+                  - not:
+                      trigger:
+                        match_words:
+                          words: ['beta', 'free']
+              actions:
+                clean: true
+                warn:
+                  reason: 'Only approved links without banned keywords are allowed'
       ~~~
   `),
 };
