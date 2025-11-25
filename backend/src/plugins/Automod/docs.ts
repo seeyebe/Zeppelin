@@ -135,11 +135,14 @@ export const automodPluginDocs: ZeppelinPluginDocs = {
               triggers:
                 - and:
                     triggers:
-                      - match_links: {}
+                      - match_links:
+                          only_real_links: true
+                          include_words: ['http']  # catch any real link
                       - not:
                           trigger:
                             match_invites:
                               allow_group_dm_invites: false
+                              exclude_invite_codes: []  # matches any invite code
               actions:
                 clean: true
                 warn:

@@ -2,7 +2,7 @@ import { z } from "zod";
 import { AutomodTriggerBlueprint, AutomodTriggerMatchResult, automodTrigger } from "../helpers.js";
 
 interface NotTriggerMatchResultExtra {
-  triggerName: string;
+  triggerNames: string[];
 }
 
 interface CreateNotTriggerOpts {
@@ -21,8 +21,8 @@ export function createNotTrigger({ getAvailableTriggers }: CreateNotTriggerOpts)
     return z
       .strictObject(schemaShape)
       .partial()
-      .refine((val) => Object.values(val).filter((v) => v !== undefined).length === 1, {
-        message: "Not trigger must specify exactly one trigger",
+      .refine((val) => Object.values(val).some((v) => v !== undefined), {
+        message: "Not trigger must specify at least one trigger",
       });
   });
 
@@ -33,30 +33,39 @@ export function createNotTrigger({ getAvailableTriggers }: CreateNotTriggerOpts)
 
     async match({ ruleName, pluginData, context, triggerConfig }) {
       const definedEntries = Object.entries(triggerConfig.trigger).filter(([, v]) => v !== undefined);
-      if (definedEntries.length !== 1) {
+      if (definedEntries.length < 1) {
         return null;
       }
 
-      const [subTriggerName, subTriggerConfig] = definedEntries[0]!;
-      const subTrigger = getAvailableTriggers()[subTriggerName];
-      if (!subTrigger) {
-        return null;
+      const testedNames: string[] = [];
+
+      for (const [subTriggerName, subTriggerConfig] of definedEntries) {
+        const subTrigger = getAvailableTriggers()[subTriggerName];
+        if (!subTrigger) {
+          continue;
+        }
+
+        testedNames.push(subTriggerName);
+
+        const subMatch = await subTrigger.match({
+          ruleName,
+          pluginData,
+          context,
+          triggerConfig: subTriggerConfig,
+        });
+
+        if (subMatch) {
+          return null;
+        }
       }
 
-      const subMatch = await subTrigger.match({
-        ruleName,
-        pluginData,
-        context,
-        triggerConfig: subTriggerConfig,
-      });
-
-      if (subMatch) {
+      if (testedNames.length === 0) {
         return null;
       }
 
       const result: AutomodTriggerMatchResult<NotTriggerMatchResultExtra> = {
         extra: {
-          triggerName: subTriggerName,
+          triggerNames: testedNames,
         },
       };
 
@@ -64,7 +73,12 @@ export function createNotTrigger({ getAvailableTriggers }: CreateNotTriggerOpts)
     },
 
     async renderMatchInformation({ matchResult }) {
-      return `Did not match ${matchResult.extra.triggerName}`;
+      const names = matchResult.extra.triggerNames;
+      if (names.length === 1) {
+        return `Did not match ${names[0]}`;
+      }
+
+      return `Did not match any of: ${names.join(", ")}`;
     },
   });
 }
