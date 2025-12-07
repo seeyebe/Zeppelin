@@ -1,4 +1,4 @@
-import { GuildTextBasedChannel, Snowflake } from "discord.js";
+import { Snowflake } from "discord.js";
 import { z } from "zod";
 import { noop } from "../../../utils.js";
 import { automodAction } from "../helpers.js";
