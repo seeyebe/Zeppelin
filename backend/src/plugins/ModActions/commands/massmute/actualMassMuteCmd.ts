@@ -1,9 +1,9 @@
-import { Attachment, ChatInputCommandInteraction, GuildMember, Message, Snowflake } from "discord.js";
+import { Attachment, ChatInputCommandInteraction, GuildMember, Message } from "discord.js";
 import { GuildPluginData } from "vety";
 import { LogType } from "../../../../data/LogType.js";
 import { logger } from "../../../../logger.js";
 import { canActOn, deleteContextResponse, isContextInteraction, sendContextResponse } from "../../../../pluginUtils.js";
-import { noop } from "../../../../utils.js";
+import { noop, resolveMember } from "../../../../utils.js";
 import { LogsPlugin } from "../../../Logs/LogsPlugin.js";
 import { MutesPlugin } from "../../../Mutes/MutesPlugin.js";
 import { handleAttachmentLinkDetectionAndGetRestriction } from "../../functions/attachmentLinkReaction.js";
@@ -36,7 +36,7 @@ export async function actualMassMuteCmd(
 
   // Verify we can act upon all users
   for (const userId of userIds) {
-    const member = pluginData.guild.members.cache.get(userId as Snowflake);
+    const member = await resolveMember(pluginData.client, pluginData.guild, userId);
     if (member && !canActOn(pluginData, author, member)) {
       pluginData.state.common.sendErrorMessage(context, "Cannot massmute one or more users: insufficient permissions");
       return;

@@ -11,7 +11,7 @@ import {
   isContextInteraction,
   sendContextResponse,
 } from "../../../../pluginUtils.js";
-import { DAYS, MINUTES, SECONDS, noop } from "../../../../utils.js";
+import { DAYS, MINUTES, SECONDS, noop, resolveMember } from "../../../../utils.js";
 import { CasesPlugin } from "../../../Cases/CasesPlugin.js";
 import { LogsPlugin } from "../../../Logs/LogsPlugin.js";
 import { handleAttachmentLinkDetectionAndGetRestriction } from "../../functions/attachmentLinkReaction.js";
@@ -45,7 +45,7 @@ export async function actualMassBanCmd(
 
   // Verify we can act on each of the users specified
   for (const userId of userIds) {
-    const member = pluginData.guild.members.cache.get(userId as Snowflake); // TODO: Get members on demand?
+    const member = await resolveMember(pluginData.client, pluginData.guild, userId);
     if (member && !canActOn(pluginData, author, member)) {
       pluginData.state.common.sendErrorMessage(context, "Cannot massban one or more users: insufficient permissions");
       return;
