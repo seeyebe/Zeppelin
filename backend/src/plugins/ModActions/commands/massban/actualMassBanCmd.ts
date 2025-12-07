@@ -44,8 +44,15 @@ export async function actualMassBanCmd(
   const banReasonWithAttachments = formatReasonWithAttachments(reason, attachments);
 
   // Verify we can act on each of the users specified
+  let fetchedMembers: Map<string, GuildMember> | null = null;
+  try {
+    fetchedMembers = await pluginData.guild.members.fetch({ user: userIds as Snowflake[] });
+  } catch {
+    // If bulk fetch fails, fall back to cache-only checks
+  }
+
   for (const userId of userIds) {
-    const member = await resolveMember(pluginData.client, pluginData.guild, userId);
+    const member = fetchedMembers?.get(userId) ?? pluginData.guild.members.cache.get(userId as Snowflake);
     if (member && !canActOn(pluginData, author, member)) {
       pluginData.state.common.sendErrorMessage(context, "Cannot massban one or more users: insufficient permissions");
       return;
