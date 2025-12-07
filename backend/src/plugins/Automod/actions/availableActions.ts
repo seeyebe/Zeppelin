@@ -9,6 +9,7 @@ import { ChangePermsAction } from "./changePerms.js";
 import { CleanAction } from "./clean.js";
 import { KickAction } from "./kick.js";
 import { LogAction } from "./log.js";
+import { LockThreadAction } from "./lockThread.js";
 import { MuteAction } from "./mute.js";
 import { PauseInvitesAction } from "./pauseInvites.js";
 import { RemoveRolesAction } from "./removeRoles.js";
@@ -17,6 +18,7 @@ import { SetAntiraidLevelAction } from "./setAntiraidLevel.js";
 import { SetCounterAction } from "./setCounter.js";
 import { SetSlowmodeAction } from "./setSlowmode.js";
 import { StartThreadAction } from "./startThread.js";
+import { UnlockThreadAction } from "./unlockThread.js";
 import { WarnAction } from "./warn.js";
 
 export const availableActions = {
@@ -37,6 +39,8 @@ export const availableActions = {
   set_slowmode: SetSlowmodeAction,
   start_thread: StartThreadAction,
   archive_thread: ArchiveThreadAction,
+  lock_thread: LockThreadAction,
+  unlock_thread: UnlockThreadAction,
   change_perms: ChangePermsAction,
   pause_invites: PauseInvitesAction,
 } satisfies Record<string, AutomodActionBlueprint<any>>;
