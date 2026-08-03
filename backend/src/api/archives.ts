@@ -1,52 +1,44 @@
 import express, { Request, Response } from "express";
 import moment from "moment-timezone";
+import { GuildPluginData, PluginConfigManager } from "vety";
 import { Configs } from "../data/Configs.js";
 import { GuildArchives } from "../data/GuildArchives.js";
-import { defaultDateFormats } from "../plugins/TimeAndDate/defaultDateFormats.js";
-import { zTimeAndDateConfig } from "../plugins/TimeAndDate/types.js";
+import { TimeAndDatePluginType, zTimeAndDateConfig } from "../plugins/TimeAndDate/types.js";
 import { zZeppelinGuildConfig } from "../types.js";
 import { loadYamlSafely } from "../utils/loadYamlSafely.js";
 import { notFound } from "./responses.js";
 
 const defaultTimeAndDateConfig = zTimeAndDateConfig.parse({});
-function getDefaultTimeAndDateSettings() {
-  return {
-    timezone: defaultTimeAndDateConfig.timezone,
-    dateFormats: { ...defaultTimeAndDateConfig.date_formats },
-  };
-}
 
-async function getTimeAndDateSettingsForGuild(guildId: string, configs: Configs) {
+async function getTimeAndDateConfigForGuild(guildId: string, configs: Configs) {
   try {
     const configEntry = await configs.getActiveByKey(`guild-${guildId}`);
     if (!configEntry?.config) {
-      return getDefaultTimeAndDateSettings();
+      return defaultTimeAndDateConfig;
     }
 
     const parsedConfig = loadYamlSafely(configEntry.config);
     const guildConfig = zZeppelinGuildConfig.safeParse(parsedConfig);
     if (!guildConfig.success) {
-      return getDefaultTimeAndDateSettings();
+      return defaultTimeAndDateConfig;
     }
 
     const pluginOptions = guildConfig.data.plugins?.time_and_date;
-    if (!pluginOptions || typeof pluginOptions !== "object") {
-      return getDefaultTimeAndDateSettings();
+    if (!pluginOptions) {
+      return defaultTimeAndDateConfig;
     }
 
-    const basePluginConfig =
-      typeof (pluginOptions as any).config === "object" ? (pluginOptions as any).config : pluginOptions;
-    const pluginConfig = zTimeAndDateConfig.safeParse(basePluginConfig ?? {});
-    if (!pluginConfig.success) {
-      return getDefaultTimeAndDateSettings();
-    }
+    const configManager = new PluginConfigManager<GuildPluginData<TimeAndDatePluginType>>(pluginOptions, {
+      configSchema: zTimeAndDateConfig,
+      defaultOverrides: [],
+      levels: guildConfig.data.levels ?? {},
+    });
+    await configManager.init();
 
-    return {
-      timezone: pluginConfig.data.timezone,
-      dateFormats: pluginConfig.data.date_formats,
-    };
-  } catch {
-    return getDefaultTimeAndDateSettings();
+    return configManager.get();
+  } catch (err) {
+    console.error(`Failed to load time and date config for guild ${guildId}`, err);
+    return defaultTimeAndDateConfig;
   }
 }
 
@@ -67,15 +59,14 @@ export function initArchives(router: express.Router) {
 
     // Add some metadata at the end of the log file (but only if it doesn't already have it directly in the body)
     if (archive.body.indexOf("Log file generated on") === -1) {
-      const timeAndDate = await getTimeAndDateSettingsForGuild(archive.guild_id, configs);
-      const prettyDatetimeFormat =
-        timeAndDate.dateFormats.pretty_datetime ?? defaultDateFormats.pretty_datetime;
+      const timeAndDateConfig = await getTimeAndDateConfigForGuild(archive.guild_id, configs);
+      const prettyDatetimeFormat = timeAndDateConfig.date_formats.pretty_datetime;
 
-      const createdAt = moment.utc(archive.created_at).tz(timeAndDate.timezone).format(prettyDatetimeFormat);
+      const createdAt = moment.utc(archive.created_at).tz(timeAndDateConfig.timezone).format(prettyDatetimeFormat);
       body += `\n\nLog file generated on ${createdAt}`;
 
       if (archive.expires_at !== null) {
-        const expiresAt = moment.utc(archive.expires_at).tz(timeAndDate.timezone).format(prettyDatetimeFormat);
+        const expiresAt = moment.utc(archive.expires_at).tz(timeAndDateConfig.timezone).format(prettyDatetimeFormat);
         body += `\nExpires at ${expiresAt}`;
       }
     }
